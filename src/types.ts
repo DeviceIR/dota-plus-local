@@ -69,6 +69,8 @@ export type DraftSuggestion = {
   metaWinrate: number;
   reasons: string[];
   details: MatchupDetail[];
+  patch: { version: string; note: string } | null;
+  metaRecommended: boolean;
 };
 
 export type ItemSuggestion = {
@@ -77,23 +79,49 @@ export type ItemSuggestion = {
   score: number;
   popularity: number;
   reasons: string[];
+  benefits: string[];
   item: Item | null;
+};
+
+export type PickPhase = {
+  isDraft: boolean;
+  action: "pick" | "ban" | "strategy" | null;
+  activeTeam: "radiant" | "dire" | null;
+  timeRemaining: number | null;
+  radiantBonus: number | null;
+  direBonus: number | null;
+  yourTurn: boolean;
+};
+
+export type LivePlayer = {
+  name: string | null;
+  team: "radiant" | "dire";
+  heroId: number | null;
+  shortName: string | null;
+  level: number;
+  items: string[];
+  isYou: boolean;
 };
 
 export type LiveState = {
   connected: boolean;
   lastUpdate: number | null;
   clock: number | null;
+  daytime: boolean | null;
   gameState: string | null;
   paused: boolean;
   steamName: string | null;
-  hero: { name: string; shortName: string; level: number } | null;
+  matchId: string | null;
+  playerTeam: "radiant" | "dire" | null;
+  hero: { name: string; shortName: string; level: number; id?: number | null } | null;
   items: string[];
+  players: LivePlayer[];
   draft: {
     radiant: (number | null)[];
     dire: (number | null)[];
     bans: number[];
   } | null;
+  pickPhase: PickPhase | null;
 };
 
 export type StatusPayload = {
@@ -104,6 +132,7 @@ export type StatusPayload = {
   abilities: number;
   matchups: number;
   images: Record<string, number> | null;
+  patchVersion?: string;
 };
 
 export type DraftState = {

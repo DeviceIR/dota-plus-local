@@ -34,6 +34,8 @@ export const api = {
     banned: number[];
     rank: RankBracket;
     role: PlayerRole;
+    pool?: number[];
+    poolOnly?: boolean;
   }) =>
     request<DraftSuggestion[]>("/api/draft/suggest", {
       method: "POST",
@@ -44,6 +46,7 @@ export const api = {
     enemy: number[];
     ownedItems?: string[];
     phase?: string;
+    role?: PlayerRole;
   }) =>
     request<ItemSuggestion[]>("/api/items/suggest", {
       method: "POST",

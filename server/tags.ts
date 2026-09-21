@@ -183,13 +183,18 @@ export const SITUATIONAL_ITEMS: {
   },
   {
     tags: ["heal"],
-    items: ["spirit_vessel", "skadi", "eye_of_skadi"],
+    items: ["spirit_vessel", "skadi", "eye_of_skadi", "nullifier"],
     reason: "vs healing",
   },
   {
     tags: ["passive"],
     items: ["silver_edge"],
     reason: "Break vs stacked passives",
+  },
+  {
+    tags: ["stun"],
+    items: ["cyclone", "wind_waker", "force_staff", "glimmer_cape", "black_king_bar"],
+    reason: "save or ignore stuns",
   },
 ];
 

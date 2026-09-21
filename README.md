@@ -12,6 +12,34 @@ npm run dev
 
 Then open [http://localhost:3003](http://localhost:3003). Keep it on a second monitor (or Alt-Tab). Put Dota in borderless windowed if you want both visible.
 
+Desktop window (same localhost GSI, not an overlay):
+
+```bash
+npm run app
+```
+
+## Share a Windows .exe with friends
+
+```bash
+npm run pack:win
+```
+
+Installers land in `release/`:
+
+- `DotaPlus Local-1.4.1-win-x64.exe` — setup (NSIS)
+- `DotaPlus Local-1.4.1-portable.exe` — no install, double-click
+
+Send one of those files. Friends do **not** need Node. Windows may SmartScreen-warn because the build is unsigned; that is expected.
+
+Each friend should:
+
+1. Run the app (second monitor, not over Dota)
+2. Open **Live** → **Install GSI config**
+3. Steam → Dota 2 → Launch Options → add `-gamestateintegration`
+4. Restart Dota, then join a bot/demo match to test
+
+GSI still only talks to `127.0.0.1` on that PC.
+
 `npm run sync` talks to OpenDota (throttled) and the Steam CDN. First run takes several minutes. Later runs skip files you already have. Use `npm run sync -- --force` to refresh everything.
 
 ## Live GSI (optional)

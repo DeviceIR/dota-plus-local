@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, emptyDraft } from "./api";
+import { buildClockCards, formatGameClock, interpolateClock, soonestCue } from "./gameClock";
+import { isHeroSelect, mergeLiveDraft, resetTeams } from "./gsiDraft";
+import { loadPool, savePool, type HeroPool } from "./heroPool";
+import { PoolPage } from "./pages/Pool";
 import { DraftPage } from "./pages/Draft";
 import { ItemsPage } from "./pages/Items";
 import { LibraryPage } from "./pages/Library";
@@ -7,7 +11,7 @@ import { LivePage } from "./pages/Live";
 import type { DraftState, Hero, Item, LiveState, StatusPayload } from "./types";
 
 const DRAFT_KEY = "dota-plus-draft";
-type Tab = "draft" | "items" | "library" | "live";
+type Tab = "draft" | "pool" | "items" | "library" | "live";
 
 function loadDraft(): DraftState {
   try {
@@ -26,7 +30,10 @@ export function App() {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState>(loadDraft);
+  const [pool, setPool] = useState<HeroPool>(loadPool);
   const [live, setLive] = useState<LiveState | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const matchRef = useRef<string | null>(null);
 
   const heroesById = useMemo(() => new Map(heroes.map((h) => [h.id, h])), [heroes]);
   const itemsByKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
@@ -59,22 +66,57 @@ export function App() {
   }, [draft]);
 
   useEffect(() => {
+    savePool(pool);
+  }, [pool]);
+
+  useEffect(() => {
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
         const state = await api.live();
-        if (alive) setLive(state);
+        if (!alive) return;
+        setLive(state);
+        timer = setTimeout(tick, isHeroSelect(state) ? 400 : state.connected ? 1000 : 2500);
       } catch {
-        /* server may still be booting */
+        if (alive) timer = setTimeout(tick, 2500);
       }
     };
     void tick();
-    const id = setInterval(tick, 2500);
     return () => {
       alive = false;
-      clearInterval(id);
+      if (timer) clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!live?.connected) return;
+    const matchChanged = Boolean(live.matchId && matchRef.current && live.matchId !== matchRef.current);
+    if (live.matchId) matchRef.current = live.matchId;
+    setDraft((d) => mergeLiveDraft(matchChanged ? resetTeams(d) : d, live));
+  }, [live]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const liveClock = interpolateClock(
+    live?.clock ?? null,
+    live?.lastUpdate ?? null,
+    Boolean(live?.paused),
+    now,
+  );
+  const nextCue = live?.connected
+    ? soonestCue(
+        buildClockCards({
+          clock: liveClock,
+          daytime: live?.daytime ?? null,
+          roshDeath: null,
+          tormentorDeath: null,
+        }).filter((c) => c.id !== "stack" && c.id !== "siege"),
+      )
+    : null;
 
   return (
     <div className="app">
@@ -84,15 +126,18 @@ export function App() {
           <span>second screen</span>
         </div>
         <nav className="nav">
-          {(["draft", "items", "library", "live"] as Tab[]).map((id) => (
+          {(["draft", "pool", "items", "library", "live"] as Tab[]).map((id) => (
             <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
-              {id}
+              {id === "pool" && pool.ids.length ? `pool (${pool.ids.length})` : id}
             </button>
           ))}
         </nav>
         <div className="live-pill">
           <span className={`dot ${live?.connected ? "on" : ""}`} />
-          {live?.connected ? "GSI connected" : "GSI idle"}
+          {live?.connected
+            ? `${isHeroSelect(live) && live.pickPhase?.action ? live.pickPhase.action.toUpperCase() : "GSI"} ${formatGameClock(liveClock)}${nextCue?.dueIn != null && nextCue.dueIn > -5 ? ` · ${nextCue.name} ${nextCue.dueIn <= 8 ? "now" : `in ${formatGameClock(nextCue.dueIn)}`}` : ""}`
+            : "GSI idle"}
+          {status?.patchVersion ? ` · ${status.patchVersion}` : ""}
         </div>
       </header>
 
@@ -106,14 +151,25 @@ export function App() {
       {error && <div className="banner">{error}</div>}
 
       {tab === "draft" && (
-        <DraftPage heroes={heroes} heroesById={heroesById} draft={draft} setDraft={setDraft} />
+        <DraftPage
+          heroes={heroes}
+          heroesById={heroesById}
+          draft={draft}
+          setDraft={setDraft}
+          pool={pool}
+          setPool={setPool}
+          patchVersion={status?.patchVersion}
+          live={live}
+        />
       )}
+      {tab === "pool" && <PoolPage heroes={heroes} pool={pool} setPool={setPool} />}
       {tab === "items" && (
         <ItemsPage
           heroes={heroes}
           heroesById={heroesById}
           itemsByKey={itemsByKey}
           draft={draft}
+          setDraft={setDraft}
           live={live}
         />
       )}

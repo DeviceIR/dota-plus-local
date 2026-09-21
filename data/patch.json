@@ -1,0 +1,47 @@
+{
+  "version": "7.41f",
+  "date": "2026-09-15",
+  "title": "Gameplay Patch",
+  "buffed": [
+    {
+      "shortName": "antimage",
+      "roles": ["carry"],
+      "note": "Mana Break damage from burned mana 0.6 → 0.65"
+    },
+    {
+      "shortName": "ursa",
+      "roles": ["carry"],
+      "note": "Maul current-HP as damage 1.25% → 1.75%"
+    },
+    {
+      "shortName": "batrider",
+      "roles": ["mid", "offlane"],
+      "note": "Intelligence gain 2.9 → 3.2"
+    },
+    {
+      "shortName": "broodmother",
+      "roles": ["mid", "offlane"],
+      "note": "Insatiable Hunger mana cost 80 → 70"
+    },
+    {
+      "shortName": "mars",
+      "roles": ["offlane"],
+      "note": "Base armor -1 → 0"
+    },
+    {
+      "shortName": "chen",
+      "roles": ["support"],
+      "note": "Strength gain 2 → 2.2; Zealot respawn now scales with hero level"
+    },
+    {
+      "shortName": "disruptor",
+      "roles": ["support"],
+      "note": "Base intelligence 20 → 21"
+    },
+    {
+      "shortName": "warlock",
+      "roles": ["support"],
+      "note": "Base attack speed 90 → 95"
+    }
+  ]
+}

@@ -307,6 +307,42 @@ button {
   padding: 2px 8px 8px;
 }
 
+.suggest-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 4px;
+}
+
+.pill {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  color: var(--muted);
+}
+
+.pill.patch {
+  color: var(--gold-2);
+  border-color: var(--gold);
+}
+
+.pill.matchup {
+  color: var(--good);
+  border-color: #4a7a3a;
+}
+
+.pill.meta {
+  color: #7eb0ea;
+  border-color: #4a8fd8;
+}
+
+.note-line.patch-note {
+  color: var(--gold-2);
+  padding: 0 8px 6px;
+}
+
 .matchup-note {
   border-top: 1px solid var(--line);
   padding: 7px 8px 8px;
@@ -422,6 +458,127 @@ button {
   border-color: var(--gold);
 }
 
+.hero-card.in-pool,
+.pool-card.in-pool {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold);
+}
+
+.pool-page {
+  gap: 10px;
+}
+
+.pool-mine .pool-mine-row {
+  margin-top: 4px;
+}
+
+.pool-group {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+}
+
+.pool-group.attr-str {
+  border-left-color: #c44532;
+}
+
+.pool-group.attr-agi {
+  border-left-color: #8bb12d;
+}
+
+.pool-group.attr-int {
+  border-left-color: #4a8fd8;
+}
+
+.pool-group.attr-uni {
+  border-left-color: var(--gold);
+}
+
+.pool-attr {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding-top: 10px;
+  line-height: 1.3;
+}
+
+.attr-str .pool-attr {
+  color: #e07a6c;
+}
+
+.attr-agi .pool-attr {
+  color: #b4d36a;
+}
+
+.attr-int .pool-attr {
+  color: #7eb0ea;
+}
+
+.attr-uni .pool-attr {
+  color: var(--gold-2);
+}
+
+.pool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pool-card {
+  width: 76px;
+  min-height: 0;
+  position: relative;
+}
+
+.pool-card img,
+.pool-card .img-fallback {
+  height: 42px;
+}
+
+.pool-card .name {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 3px;
+  font-size: 9px;
+  line-height: 1.2;
+  background: #000c;
+}
+
+.pool-card:hover .name,
+.pool-mine .pool-card .name {
+  display: block;
+}
+
+.pool-card.in-pool::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 2px var(--gold);
+  pointer-events: none;
+}
+
+.pool-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pool-toggle input {
+  accent-color: var(--gold);
+}
+
 .library-detail {
   display: grid;
   grid-template-columns: 280px 1fr;
@@ -444,13 +601,312 @@ button {
   object-fit: cover;
 }
 
-.status-card {
+.clock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.clock-card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.obj-art {
+  position: relative;
+  height: 118px;
+  background: #07090d;
+}
+
+.obj-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.obj-timer {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 2px 10px #000, 0 0 14px #0008;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.clock-card.soon .obj-timer {
+  color: var(--gold-2);
+}
+
+.clock-card.now .obj-timer {
+  color: var(--good);
+  font-size: 36px;
+}
+
+.clock-card .clock-card-top {
+  padding: 8px 10px 0;
+}
+
+.clock-card p {
+  padding: 0 10px 10px;
+}
+
+.pick-phase {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
+.pick-phase.yours {
+  border-color: var(--gold);
+}
+
+.pick-phase.ban {
+  border-color: var(--bad);
+}
+
+.pick-phase-main {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.pick-action {
+  color: var(--gold);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.pick-clock {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.pick-turn {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+}
+
+.clock-card.soon {
+  border-color: var(--gold);
+}
+
+.clock-card.now {
+  border-color: var(--good);
+  box-shadow: 0 0 0 1px var(--good);
+}
+
+.clock-card-top {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.clock-card-top strong {
+  font-size: 13px;
+}
+
+.clock-card p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.live-page {
+  gap: 10px;
+}
+
+.live-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  padding: 16px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.live-board {
+  display: grid;
+  grid-template-columns: minmax(340px, 1.1fr) minmax(380px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.live-fighters {
+  display: grid;
+  gap: 10px;
+}
+
+.live-player {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.live-player:last-child {
+  border-bottom: 0;
+}
+
+.live-hero {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.live-hero img,
+.live-hero .img-fallback {
+  width: 72px;
+  height: 40px;
+  object-fit: cover;
+  display: block;
+}
+
+.live-hero strong {
+  font-size: 12px;
+}
+
+.live-items {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.live-item,
+.live-item.empty {
+  width: 100%;
+  height: 32px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: block;
+}
+
+.live-buys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.live-buy {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 4px 8px 4px 4px;
+  font-size: 11px;
+  max-width: 280px;
+}
+
+.live-buy img {
+  width: 36px;
+  height: 26px;
+  object-fit: cover;
+}
+
+.live-buy-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.live-buy-why {
+  color: var(--gold-2);
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.owned-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.owned-chip {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  opacity: 0.7;
+}
+
+.owned-chip img {
+  width: 40px;
+  height: 30px;
+}
+
+.clock-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.clock-head h3 {
+  margin: 0;
+}
+
+.clock-head .row {
+  gap: 6px;
+}
+
+.clock-head button {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.clock-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 6px;
+  margin-top: 0;
+}
+
+.clock-grid.compact .obj-art {
+  height: 72px;
+}
+
+.clock-grid.compact .obj-timer {
+  font-size: 22px;
+  top: 4px;
+}
+
+.clock-grid.compact .clock-card.now .obj-timer {
+  font-size: 24px;
+}
+
+.clock-grid.compact .clock-card-top {
+  padding: 4px 6px 6px;
+}
+
+.clock-grid.compact .clock-card-top strong {
+  font-size: 10px;
 }
 
 .inv {
@@ -486,7 +942,10 @@ code {
 @media (max-width: 980px) {
   .layout,
   .teams,
-  .library-detail {
+  .library-detail,
+  .pool-group,
+  .live-board,
+  .live-player {
     grid-template-columns: 1fr;
   }
 }

@@ -1,16 +1,21 @@
 {
   "name": "dota-plus-local",
-  "version": "1.0.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Local second-screen Dota 2 companion for pick phase and item suggestions",
+  "author": "DotaPlus Local",
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "sync": "tsx scripts/sync-data.ts",
     "build": "vite build",
-    "start": "tsx server/index.ts"
+    "start": "tsx server/index.ts",
+    "app": "npm run build && electron .",
+    "bundle:server": "esbuild server/index.ts --bundle --platform=node --format=esm --outfile=electron/server.bundle.mjs --packages=bundle",
+    "pack:win": "npm run build && npm run bundle:server && electron-builder --win"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -26,8 +31,69 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.9",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vite": "^6.0.7"
+  },
+  "build": {
+    "appId": "local.dotaplus",
+    "productName": "DotaPlus Local",
+    "copyright": "Personal companion — not affiliated with Valve",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/main.mjs",
+      "electron/server.bundle.mjs",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "data",
+        "to": "data",
+        "filter": [
+          "**/*",
+          "!sync-log.txt"
+        ]
+      },
+      {
+        "from": "gsi",
+        "to": "gsi"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DotaPlus Local",
+      "uninstallDisplayName": "DotaPlus Local"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    }
   }
 }

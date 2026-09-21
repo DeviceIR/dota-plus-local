@@ -8,25 +8,26 @@ const execFileAsync = promisify(execFile);
 
 const CFG = `"DotaPlus Local"
 {
-\t"uri"\t\t"${GSI_URI}"
-\t"timeout"\t"5.0"
-\t"buffer"\t"0.1"
-\t"throttle"\t"0.1"
-\t"heartbeat"\t"30.0"
-\t"data"
-\t{
-\t\t"provider"\t\t"1"
-\t\t"map"\t\t\t"1"
-\t\t"player"\t\t"1"
-\t\t"hero"\t\t\t"1"
-\t\t"abilities"\t\t"1"
-\t\t"items"\t\t\t"1"
-\t\t"draft"\t\t\t"1"
-\t}
-\t"auth"
-\t{
-\t\t"token"\t\t"${GSI_TOKEN}"
-\t}
+	"uri"		"${GSI_URI}"
+	"timeout"	"5.0"
+	"buffer"	"0.1"
+	"throttle"	"0.1"
+	"heartbeat"	"30.0"
+	"data"
+	{
+		"provider"		"1"
+		"map"			"1"
+		"player"		"1"
+		"hero"			"1"
+		"abilities"		"1"
+		"items"			"1"
+		"draft"			"1"
+		"allplayers"		"1"
+	}
+	"auth"
+	{
+		"token"		"${GSI_TOKEN}"
+	}
 }
 `;
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ASSETS_DIR, DATA_DIR, heroShortName, stripHtml } from "./paths.ts";
+import { loadPatch, type PatchInfo } from "./patchPriority.ts";
 import type {
   Ability,
   Hero,
@@ -69,6 +70,7 @@ export type Catalog = {
   matchups: Record<string, Matchup[]>;
   itemPopularity: Record<string, ItemPopularity>;
   heroStats: Record<number, HeroStatsRow>;
+  patch: PatchInfo;
   status: StatusPayload;
 };
 
@@ -151,6 +153,7 @@ export function loadCatalog(force = false): Catalog | null {
     mtime(path.join(DATA_DIR, "matchups.json")),
     mtime(path.join(DATA_DIR, "itemPopularity.json")),
     mtime(path.join(DATA_DIR, "manifest.json")),
+    mtime(path.join(DATA_DIR, "patch.json")),
   );
   if (!force && catalog && stamp === loadedMtime) return catalog;
 
@@ -245,6 +248,7 @@ export function loadCatalog(force = false): Catalog | null {
     if (typeof row?.id === "number") heroStats[row.id] = row;
   }
 
+  const patch = loadPatch();
   const status: StatusPayload = {
     synced: heroes.length > 0,
     syncedAt: manifest.syncedAt ?? null,
@@ -253,6 +257,7 @@ export function loadCatalog(force = false): Catalog | null {
     abilities: Object.keys(abilities).length,
     matchups: Object.keys(matchups).length,
     images: manifest.images ?? null,
+    patchVersion: patch.version,
   };
 
   catalog = {
@@ -267,6 +272,7 @@ export function loadCatalog(force = false): Catalog | null {
     matchups,
     itemPopularity,
     heroStats,
+    patch,
     status,
   };
   loadedMtime = stamp;

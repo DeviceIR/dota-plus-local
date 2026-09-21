@@ -2,9 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const ROOT = path.resolve(here, "..");
+export const ROOT = process.env.DOTAPLUS_ROOT || path.resolve(here, "..");
 export const DATA_DIR = path.join(ROOT, "data");
 export const ASSETS_DIR = path.join(DATA_DIR, "assets");
+export const DIST_DIR = process.env.DOTAPLUS_UI || path.join(ROOT, "dist");
 export const PORT = 5174;
 export const GSI_TOKEN = "dotaplus-local";
 export const GSI_URI = `http://127.0.0.1:${PORT}/gsi`;

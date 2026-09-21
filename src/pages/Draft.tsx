@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import type { HeroPool } from "../heroPool";
+import { PickPhaseBanner } from "../PickPhase";
 import { SafeImage } from "../SafeImage";
-import type { DraftState, DraftSuggestion, Hero, PlayerRole, RankBracket } from "../types";
+import type { DraftState, DraftSuggestion, Hero, LiveState, PlayerRole, RankBracket } from "../types";
 
 const RANKS: { id: RankBracket; label: string }[] = [
   { id: "divine_plus", label: "Divine+" },
@@ -33,6 +35,10 @@ type Props = {
   heroesById: Map<number, Hero>;
   draft: DraftState;
   setDraft: (next: DraftState | ((d: DraftState) => DraftState)) => void;
+  pool: HeroPool;
+  setPool: (next: HeroPool | ((p: HeroPool) => HeroPool)) => void;
+  patchVersion?: string;
+  live?: LiveState | null;
 };
 
 function pct(n: number | null): string {
@@ -40,7 +46,7 @@ function pct(n: number | null): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
-export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
+export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, patchVersion, live }: Props) {
   const [mode, setMode] = useState<"pick" | "ban">("pick");
   const [target, setTarget] = useState<{ team: "radiant" | "dire"; index: number } | null>({
     team: draft.side,
@@ -84,13 +90,15 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
           banned: draft.bans,
           rank: draft.rank,
           role: draft.role ?? "any",
+          pool: pool.ids,
+          poolOnly: pool.suggestFromPool && pool.ids.length > 0,
         })
         .then(setSuggestions)
         .catch(() => setSuggestions([]))
         .finally(() => setBusy(false));
     }, 200);
     return () => clearTimeout(t);
-  }, [heroes.length, draft]);
+  }, [heroes.length, draft, pool.ids, pool.suggestFromPool]);
 
   function placeHero(id: number) {
     if (mode === "ban") {
@@ -123,6 +131,7 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
 
   return (
     <div className="page">
+      <PickPhaseBanner live={live ?? null} />
       <div className="row">
         <button
           className={draft.side === "radiant" ? "gold" : "ghost"}
@@ -169,13 +178,21 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
         <button className="ghost" onClick={() => setDraft({ ...emptyFrom(draft) })}>
           Clear board
         </button>
+        <label className="pool-toggle">
+          <input
+            type="checkbox"
+            checked={pool.suggestFromPool}
+            onChange={(e) => setPool({ ...pool, suggestFromPool: e.target.checked })}
+          />
+          Suggest from my pool{pool.ids.length ? ` (${pool.ids.length})` : ""}
+        </label>
       </div>
 
       <div className="teams">
         {(["radiant", "dire"] as const).map((team) => (
           <div key={team} className={`team ${team}`}>
             <h3>
-              {team} {draft.side === team ? "(you)" : "(enemy)"}
+              {team} {draft.side === team ? "(you · GSI auto)" : "(enemy · GSI if Valve sends it)"}
             </h3>
             <div className="slots">
               {(team === "radiant" ? draft.radiant : draft.dire).map((id, index) => {
@@ -246,10 +263,11 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
           <div className="grid" style={{ marginTop: 12 }}>
             {filtered.map((hero) => {
               const used = taken.has(hero.id);
+              const pinned = pool.ids.includes(hero.id);
               return (
                 <button
                   key={hero.id}
-                  className={`hero-card ${used ? "taken" : ""} ${draft.bans.includes(hero.id) ? "banned" : ""}`}
+                  className={`hero-card ${used ? "taken" : ""} ${draft.bans.includes(hero.id) ? "banned" : ""} ${pinned ? "in-pool" : ""}`}
                   onClick={() => placeHero(hero.id)}
                   disabled={used && mode === "pick"}
                 >
@@ -264,19 +282,29 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
         <aside className="panel">
           <h3>{busy ? "Reading matchups…" : "Suggested picks"}</h3>
           <p className="muted">
-            {draft.role && draft.role !== "any"
-              ? `${ROLES.find((r) => r.id === draft.role)?.label} picks for ${draft.rank.replace("_", " ")}. Click to fill your next slot.`
-              : `Against the enemy lineup, for empty ${draft.side} slots. Pick a role to lock suggestions.`}
+            {pool.suggestFromPool && pool.ids.length === 0
+              ? "Your pool is empty. Open the Pool tab and click the heroes you play."
+              : pool.suggestFromPool && pool.ids.length > 0
+                ? `Ranking ${pool.ids.length} pool heroes${draft.role && draft.role !== "any" ? ` as ${ROLES.find((r) => r.id === draft.role)?.label}` : ""} vs this lineup. ${patchVersion ?? "Patch"} buffs you play stay next to matchup counters.`
+                : `Comparing ${draft.role && draft.role !== "any" ? `${ROLES.find((r) => r.id === draft.role)?.label.toLowerCase()} ` : ""}matchup counters with ${patchVersion ?? "this patch"} buffs and hot meta. Both can show.`}
           </p>
           {suggestions.map((s) => {
             const hero = heroesById.get(s.heroId);
             if (!hero) return null;
+            const goodMatchup = (s.matchupWinrate ?? 0) >= 0.52;
             return (
               <button key={s.heroId} className="suggest-card" onClick={() => placeHero(s.heroId)}>
                 <div className="suggest-head">
                   <SafeImage src={hero.img} alt={hero.localizedName} />
                   <div>
                     <strong className="name">{hero.localizedName}</strong>
+                    <div className="suggest-pills">
+                      {s.patch && <span className="pill patch">{s.patch.version} buff</span>}
+                      {goodMatchup && <span className="pill matchup">good vs lineup</span>}
+                      {s.metaRecommended && !s.patch && (
+                        <span className="pill meta">hot this patch</span>
+                      )}
+                    </div>
                     <div className="meta">
                       {s.matchupWinrate != null && (
                         <span className="pct">vs lineup {pct(s.matchupWinrate)} · </span>
@@ -286,6 +314,7 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
                     </div>
                   </div>
                 </div>
+                {s.patch && <p className="note-line patch-note">{s.patch.note}</p>}
                 {(s.details ?? []).map((d) => (
                   <div key={d.enemyId} className="matchup-note">
                     <div className="matchup-note-title">
@@ -309,6 +338,13 @@ export function DraftPage({ heroes, heroesById, draft, setDraft }: Props) {
               </button>
             );
           })}
+          {!busy && suggestions.length === 0 && (
+            <p className="muted">
+              {pool.suggestFromPool && pool.ids.length > 0
+                ? "No pool heroes left for this role or lineup. Add more in Pool, switch role to Any, or uncheck Suggest from my pool."
+                : "Fill enemy slots or pick a role to rank suggestions."}
+            </p>
+          )}
           {allied.filter(Boolean).length >= 5 && (
             <p className="muted">Your side is full. Clear a slot to keep drafting.</p>
           )}

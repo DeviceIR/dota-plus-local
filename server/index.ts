@@ -1,6 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import express from "express";
 import cors from "cors";
-import { ASSETS_DIR, GSI_TOKEN, PORT } from "./paths.ts";
+import { ASSETS_DIR, DIST_DIR, GSI_TOKEN, PORT } from "./paths.ts";
 import { loadCatalog, requireCatalog } from "./catalog.ts";
 import { suggestDraft, suggestItems } from "./suggest.ts";
 import { getLiveState, ingestGsi, type GsiPayload } from "./gsi.ts";
@@ -80,7 +82,9 @@ app.post(
     const banned = (req.body?.banned ?? []) as number[];
     const rank = (req.body?.rank ?? "divine_plus") as RankBracket;
     const role = (req.body?.role ?? "any") as PlayerRole;
-    res.json(suggestDraft(catalog, { allied, enemy, banned, rank, role }));
+    const pool = (req.body?.pool ?? []) as number[];
+    const poolOnly = Boolean(req.body?.poolOnly);
+    res.json(suggestDraft(catalog, { allied, enemy, banned, rank, role, pool, poolOnly }));
   }),
 );
 
@@ -96,7 +100,8 @@ app.post(
     const enemy = (req.body?.enemy ?? []) as number[];
     const ownedItems = (req.body?.ownedItems ?? []) as string[];
     const phase = (req.body?.phase ?? "all") as ItemPhase | "all";
-    const suggestions = suggestItems(catalog, { heroId, enemy, ownedItems, phase });
+    const role = (req.body?.role ?? "any") as PlayerRole;
+    const suggestions = suggestItems(catalog, { heroId, enemy, ownedItems, phase, role });
     const withItems = suggestions.map((row) => ({
       ...row,
       item: catalog.itemsByKey.get(row.itemKey) ?? null,
@@ -131,19 +136,55 @@ app.post("/gsi", (req, res) => {
   res.json({ ok: true });
 });
 
-app.use(
-  (
-    err: Error & { status?: number },
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction,
-  ) => {
-    const status = err.status ?? 500;
-    res.status(status).json({ error: err.message });
-  },
-);
+function mountUi() {
+  if (!fs.existsSync(DIST_DIR)) return;
+  app.use(express.static(DIST_DIR));
+  app.get(/.*/, (req, res, next) => {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/assets") ||
+      req.path.startsWith("/gsi")
+    ) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(DIST_DIR, "index.html"));
+  });
+}
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`DotaPlus Local API http://127.0.0.1:${PORT}`);
-  loadCatalog();
-});
+let listening: ReturnType<typeof app.listen> | null = null;
+let uiMounted = false;
+
+export function startServer(): Promise<void> {
+  if (!uiMounted) {
+    mountUi();
+    app.use(
+      (
+        err: Error & { status?: number },
+        _req: express.Request,
+        res: express.Response,
+        _next: express.NextFunction,
+      ) => {
+        const status = err.status ?? 500;
+        res.status(status).json({ error: err.message });
+      },
+    );
+    uiMounted = true;
+  }
+  return new Promise((resolve, reject) => {
+    if (listening) {
+      resolve();
+      return;
+    }
+    listening = app.listen(PORT, "127.0.0.1", () => {
+      console.log(`DotaPlus Local API http://127.0.0.1:${PORT}`);
+      loadCatalog();
+      resolve();
+    });
+    listening.on("error", reject);
+  });
+}
+
+if (!process.env.DOTAPLUS_ELECTRON) {
+  void startServer();
+}

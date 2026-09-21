@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { MapClockPanel } from "../MapClock";
+import { PickPhaseBanner } from "../PickPhase";
 import { api } from "../api";
 import { SafeImage } from "../SafeImage";
-import type { DraftState, Hero, Item, ItemSuggestion, LiveState } from "../types";
+import type { DraftState, Hero, Item, ItemSuggestion, LivePlayer, LiveState } from "../types";
 
 type Props = {
   live: LiveState | null;
@@ -30,8 +32,15 @@ function phaseFromClock(clock: number | null): "start" | "early" | "mid" | "late
   return "late";
 }
 
+function resolveHero(player: LivePlayer, heroesById: Map<number, Hero>, heroes: Hero[]): Hero | undefined {
+  if (player.heroId) return heroesById.get(player.heroId);
+  if (player.shortName) return heroes.find((h) => h.shortName === player.shortName);
+  return undefined;
+}
+
 export function LivePage({
   live,
+  heroes,
   heroesById,
   itemsByKey,
   draft,
@@ -43,32 +52,51 @@ export function LivePage({
   const [nextBuys, setNextBuys] = useState<ItemSuggestion[]>([]);
 
   const liveHero = live?.hero
-    ? [...heroesById.values()].find((h) => h.shortName === live.hero?.shortName)
+    ? [...heroesById.values()].find((h) => h.shortName === live.hero?.shortName) ??
+      (live.hero.id ? heroesById.get(live.hero.id) : undefined)
     : undefined;
+
+  const you = useMemo(
+    () => live?.players.find((p) => p.isYou) ?? null,
+    [live?.players],
+  );
+  const enemies = useMemo(() => {
+    const team = live?.playerTeam ?? you?.team ?? draft.side;
+    const fromPlayers = (live?.players ?? []).filter((p) => !p.isYou && p.team !== team);
+    if (fromPlayers.length) return fromPlayers;
+    const ids = team === "radiant" ? (live?.draft?.dire ?? draft.dire) : (live?.draft?.radiant ?? draft.radiant);
+    const enemyTeam: "radiant" | "dire" = team === "radiant" ? "dire" : "radiant";
+    return ids
+      .filter((id): id is number => Boolean(id))
+      .map((heroId) => ({
+        name: null,
+        team: enemyTeam,
+        heroId,
+        shortName: null,
+        level: 0,
+        items: [] as string[],
+        isYou: false,
+      }));
+  }, [live?.players, live?.playerTeam, live?.draft, you?.team, draft]);
 
   useEffect(() => {
     if (!liveHero) {
       setNextBuys([]);
       return;
     }
-    const enemy = (draft.side === "radiant" ? draft.dire : draft.radiant).filter(
-      (id): id is number => Boolean(id),
-    );
-    const fromGsi = live?.draft
-      ? (draft.side === "radiant" ? live.draft.dire : live.draft.radiant).filter(
-          (id): id is number => Boolean(id),
-        )
-      : [];
+    const enemyIds = enemies.map((p) => p.heroId).filter((id): id is number => Boolean(id));
+    const ownedItems = [...new Set([...(you?.items ?? []), ...(live?.items ?? [])])];
     void api
       .itemSuggest({
         heroId: liveHero.id,
-        enemy: fromGsi.length ? fromGsi : enemy,
-        ownedItems: live?.items ?? [],
+        enemy: enemyIds,
+        ownedItems,
         phase: phaseFromClock(live?.clock ?? null),
+        role: draft.role ?? "any",
       })
       .then(setNextBuys)
       .catch(() => setNextBuys([]));
-  }, [liveHero?.id, live?.items, live?.draft, live?.clock, draft, liveHero]);
+  }, [liveHero?.id, you?.items, live?.items, live?.clock, enemies, liveHero, draft.role]);
 
   async function install() {
     setBusy(true);
@@ -83,129 +111,175 @@ export function LivePage({
     }
   }
 
-  function applyDraft() {
-    if (!live?.draft) return;
-    setDraft((d) => ({
-      ...d,
-      radiant: padFive(live.draft!.radiant),
-      dire: padFive(live.draft!.dire),
-      bans: live.draft!.bans,
-    }));
-    setInstallMsg("Copied GSI draft onto the Draft board.");
-  }
+  const drafting = Boolean(live?.pickPhase?.isDraft);
+  const enemyHasItems = enemies.some((p) => p.items.length > 0);
 
   return (
-    <div className="page">
-      <div className="status-card">
+    <div className="page live-page">
+      <div className="live-status">
         <div>
-          <h3 style={{ margin: "0 0 8px", color: "var(--gold)" }}>Game State Integration</h3>
-          <p className="muted">
-            Official Valve feed only. This app never injects into Dota, never reads memory, and
-            never clicks or buys for you. Keep this window on a second screen.
-          </p>
-          <p>
-            Status:{" "}
-            <strong>{live?.connected ? "connected" : "waiting for Dota"}</strong>
-            {live?.steamName ? ` · ${live.steamName}` : ""}
-          </p>
-          <p className="muted">
-            Clock {formatClock(live?.clock ?? null)}
-            {live?.paused ? " (paused)" : ""} · {live?.gameState ?? "no map state"}
-          </p>
+          <strong>{live?.connected ? "GSI connected" : "GSI waiting"}</strong>
+          {live?.steamName ? ` · ${live.steamName}` : ""}
+          <span className="muted">
+            {" "}
+            · {formatClock(live?.clock ?? null)}
+            {live?.paused ? " paused" : ""}
+          </span>
         </div>
-        <div className="row" style={{ flexDirection: "column", alignItems: "flex-end" }}>
-          <button className="gold" disabled={busy} onClick={() => void install()}>
-            {busy ? "Installing…" : "Install GSI config"}
-          </button>
-          <span className="muted">Launch option: -gamestateintegration</span>
-        </div>
+        <button className="ghost" disabled={busy} onClick={() => void install()}>
+          {busy ? "Installing…" : "Install GSI"}
+        </button>
       </div>
-
       {installMsg && <div className="banner">{installMsg}</div>}
+      <PickPhaseBanner live={live} compact />
 
-      <div className="panel">
-        <h3>Your hero</h3>
-        {liveHero ? (
-          <div className="row">
-            <div style={{ width: 160 }}>
-              <SafeImage src={liveHero.img} alt={liveHero.localizedName} />
-            </div>
-            <div>
-              <strong>{liveHero.localizedName}</strong>
-              <div className="muted">Level {live?.hero?.level ?? 0}</div>
-            </div>
-          </div>
-        ) : (
-          <p className="muted">
-            No hero yet. Start a match (or pick phase, if Valve sends it) with GSI enabled.
-          </p>
-        )}
-      </div>
-
-      <div className="panel">
-        <h3>Inventory</h3>
-        <div className="inv">
-          {(live?.items ?? []).map((key) => {
-            const item = itemsByKey.get(key);
-            return (
-              <SafeImage
-                key={key}
-                className="item-icon"
-                src={item?.img ?? `/assets/items/${key}.png`}
-                alt={item?.dname ?? key}
+      <div className="live-board">
+        <div className="live-fighters">
+          <div className="panel">
+            <h3>You</h3>
+            {you || liveHero ? (
+              <PlayerRow
+                player={
+                  you ?? {
+                    name: live?.steamName ?? null,
+                    team: live?.playerTeam ?? draft.side,
+                    heroId: liveHero?.id ?? null,
+                    shortName: liveHero?.shortName ?? null,
+                    level: live?.hero?.level ?? 0,
+                    items: live?.items ?? [],
+                    isYou: true,
+                  }
+                }
+                heroes={heroes}
+                heroesById={heroesById}
+                itemsByKey={itemsByKey}
+                you
               />
-            );
-          })}
-          {(!live?.items || live.items.length === 0) && (
-            <span className="muted">Empty until the game reports items.</span>
+            ) : (
+              <p className="muted">No hero yet. Start a match with GSI enabled.</p>
+            )}
+          </div>
+
+          <div className="panel">
+            <h3>Enemy</h3>
+            {enemies.length ? (
+              enemies.map((player, i) => (
+                <PlayerRow
+                  key={`${player.heroId ?? i}-${player.name ?? i}`}
+                  player={player}
+                  heroes={heroes}
+                  heroesById={heroesById}
+                  itemsByKey={itemsByKey}
+                />
+              ))
+            ) : (
+              <p className="muted">No enemy heroes yet. Ranked often hides them until picks lock.</p>
+            )}
+            {enemies.length > 0 && !enemyHasItems && (
+              <p className="muted">
+                Valve GSI usually hides enemy inventories in ranked. Spectating a match shows items.
+              </p>
+            )}
+          </div>
+
+          {nextBuys.length > 0 && (
+            <div className="panel">
+              <h3>Next buys</h3>
+              <div className="live-buys">
+                {nextBuys.slice(0, 6).map((row) => {
+                  const item = row.item ?? itemsByKey.get(row.itemKey);
+                  if (!item) return null;
+                  const why = (row.benefits ?? [])[0] || row.reasons[0];
+                  return (
+                    <div
+                      key={`${row.phase}-${item.key}`}
+                      className="live-buy"
+                      title={[...(row.benefits ?? []), ...row.reasons].join(" · ")}
+                    >
+                      <SafeImage className="item-icon" src={item.img} alt={item.dname} />
+                      <div className="live-buy-copy">
+                        <span>{item.dname}</span>
+                        {why && <span className="live-buy-why">{why}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
+
+        <MapClockPanel live={live} compact />
       </div>
 
-      {nextBuys.length > 0 && (
+      {drafting && live?.draft && (
         <div className="panel">
-          <h3>Next buys</h3>
-          <div className="item-grid">
-            {nextBuys.slice(0, 8).map((row) => {
-              const item = row.item ?? itemsByKey.get(row.itemKey);
-              if (!item) return null;
-              return (
-                <div key={`${row.phase}-${item.key}`} className="item-card">
-                  <SafeImage className="item-icon" src={item.img} alt={item.dname} />
-                  <div className="body">
-                    <strong>{item.dname}</strong>
-                    <span className="muted">{row.phase}</span>
-                    <span className="reason">{row.reasons.join(" · ")}</span>
-                  </div>
-                </div>
-              );
-            })}
+          <h3>Draft snapshot</h3>
+          <div className="teams">
+            <TeamLine title="Radiant" ids={live.draft.radiant} heroesById={heroesById} />
+            <TeamLine title="Dire" ids={live.draft.dire} heroesById={heroesById} />
           </div>
+          <button
+            className="ghost"
+            style={{ marginTop: 10 }}
+            onClick={() =>
+              setDraft((d) => ({
+                ...d,
+                radiant: padFive(live.draft!.radiant),
+                dire: padFive(live.draft!.dire),
+                bans: live.draft!.bans,
+              }))
+            }
+          >
+            Copy onto Draft board
+          </button>
         </div>
       )}
+    </div>
+  );
+}
 
-      <div className="panel">
-        <h3>Draft from GSI</h3>
-        {live?.draft ? (
-          <>
-            <div className="teams">
-              <TeamLine title="Radiant" ids={live.draft.radiant} heroesById={heroesById} />
-              <TeamLine title="Dire" ids={live.draft.dire} heroesById={heroesById} />
-            </div>
-            <button className="gold" style={{ marginTop: 12 }} onClick={applyDraft}>
-              Copy onto Draft board
-            </button>
-            <p className="muted">
-              Ranked often hides enemy picks from GSI. If this looks empty, use the Draft tab
-              manually.
-            </p>
-          </>
-        ) : (
-          <p className="muted">
-            No draft payload right now. That is normal in many ranked games — Valve simply does not
-            send it.
-          </p>
-        )}
+function PlayerRow({
+  player,
+  heroes,
+  heroesById,
+  itemsByKey,
+  you,
+}: {
+  player: LivePlayer;
+  heroes: Hero[];
+  heroesById: Map<number, Hero>;
+  itemsByKey: Map<string, Item>;
+  you?: boolean;
+}) {
+  const hero = resolveHero(player, heroesById, heroes);
+  const slots = [...player.items];
+  while (slots.length < 6) slots.push("");
+  return (
+    <div className={`live-player ${you ? "you" : ""}`}>
+      <div className="live-hero">
+        {hero ? <SafeImage src={hero.img} alt={hero.localizedName} /> : <div className="img-fallback" />}
+        <div>
+          <strong>{hero?.localizedName ?? player.name ?? "Unknown"}</strong>
+          <div className="muted">
+            {player.level ? `Lv ${player.level}` : player.team}
+            {player.name && hero ? ` · ${player.name}` : ""}
+          </div>
+        </div>
+      </div>
+      <div className="live-items">
+        {slots.slice(0, 6).map((key, i) => {
+          if (!key) return <div key={`empty-${i}`} className="live-item empty" />;
+          const item = itemsByKey.get(key);
+          return (
+            <SafeImage
+              key={`${key}-${i}`}
+              className="live-item"
+              src={item?.img ?? `/assets/items/${key}.png`}
+              alt={item?.dname ?? key}
+            />
+          );
+        })}
       </div>
     </div>
   );

@@ -1,11 +1,9 @@
 import type { Catalog, HeroStatsRow } from "./catalog.ts";
 import { detailReasons, matchupDetails, payoffBonus, type BreakTool } from "./matchupNotes.ts";
-import { tagsForShortName, SITUATIONAL_ITEMS } from "./tags.ts";
+import { patchBuffFor } from "./patchPriority.ts";
 import type {
   DraftSuggestion,
   Hero,
-  ItemPhase,
-  ItemSuggestion,
   PlayerRole,
   RankBracket,
 } from "./types.ts";
@@ -102,6 +100,17 @@ function num(row: HeroStatsRow | undefined, key: string): number {
   return typeof value === "number" ? value : 0;
 }
 
+export function metaPickCount(row: HeroStatsRow | undefined, rank: RankBracket): number {
+  if (!row) return 0;
+  if (rank === "divine_plus") return num(row, "7_pick") + num(row, "8_pick");
+  if (rank === "all") {
+    let pick = 0;
+    for (let i = 1; i <= 8; i++) pick += num(row, `${i}_pick`);
+    return pick;
+  }
+  return num(row, `${RANK_INDEX[rank]}_pick`);
+}
+
 export function metaWinrate(row: HeroStatsRow | undefined, rank: RankBracket): number {
   if (!row) return 0.5;
   if (rank === "divine_plus") {
@@ -122,6 +131,33 @@ export function metaWinrate(row: HeroStatsRow | undefined, rank: RankBracket): n
   const pick = num(row, `${i}_pick`);
   const win = num(row, `${i}_win`);
   return pick > 0 ? win / pick : 0.5;
+}
+
+function mixSuggestions(
+  rows: DraftSuggestion[],
+  limit: number,
+  hasEnemies: boolean,
+): DraftSuggestion[] {
+  const ranked = [...rows].sort((a, b) => b.score - a.score);
+  const matchup = ranked.filter((r) => (r.matchupWinrate ?? 0) >= 0.52);
+  const patch = ranked.filter((r) => r.patch);
+  const meta = ranked.filter((r) => r.metaRecommended);
+  const groups = hasEnemies ? [matchup, patch, meta, ranked] : [patch, meta, ranked];
+  const seen = new Set<number>();
+  const out: DraftSuggestion[] = [];
+  let added = true;
+  while (out.length < limit && added) {
+    added = false;
+    for (const group of groups) {
+      const next = group.find((row) => !seen.has(row.heroId));
+      if (!next) continue;
+      seen.add(next.heroId);
+      out.push(next);
+      added = true;
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
 }
 
 function roleFit(catalog: Catalog, heroId: number, allied: number[]): number {
@@ -156,6 +192,8 @@ export function suggestDraft(
     banned: number[];
     rank: RankBracket;
     role?: PlayerRole;
+    pool?: number[];
+    poolOnly?: boolean;
     limit?: number;
   },
 ): DraftSuggestion[] {
@@ -164,12 +202,25 @@ export function suggestDraft(
   );
   const enemy = input.enemy.filter((id) => id > 0);
   const role = input.role ?? "any";
+  const pool = (input.pool ?? []).filter((id) => id > 0);
+  const poolSet = new Set(pool);
+  const poolOnly = Boolean(input.poolOnly && poolSet.size > 0);
   const results: DraftSuggestion[] = [];
   const kitCache = new Map<number, BreakTool[]>();
-
+  const eligible: Hero[] = [];
   for (const hero of catalog.heroes) {
     if (taken.has(hero.id)) continue;
+    if (poolOnly && !poolSet.has(hero.id)) continue;
     if (!matchesRole(hero, role)) continue;
+    eligible.push(hero);
+  }
+
+  const pickCounts = eligible.map((hero) => metaPickCount(catalog.heroStats[hero.id], input.rank));
+  const sortedPicks = [...pickCounts].sort((a, b) => a - b);
+  const pickCutoff = sortedPicks[Math.floor(sortedPicks.length * 0.65)] ?? 0;
+
+  for (let i = 0; i < eligible.length; i++) {
+    const hero = eligible[i];
     const matchups = catalog.matchups[String(hero.id)] ?? [];
     let weight = 0;
     let wrSum = 0;
@@ -192,12 +243,21 @@ export function suggestDraft(
     const fit = roleFit(catalog, hero.id, input.allied.filter((id) => id > 0));
     const matchupScore = matchupWinrate ?? 0.5;
     const details = matchupDetails(catalog, hero, enemy, kitCache);
+    const inPool = poolSet.has(hero.id) ? 0.04 : 0;
+    const buff = patchBuffFor(catalog.patch, hero.shortName, role);
+    const patchBonus = buff ? 0.08 : 0;
+    const picks = pickCounts[i];
+    const metaRecommended = meta >= 0.52 && picks >= pickCutoff && picks > 0;
+    const metaBonus = metaRecommended && !buff ? 0.03 : 0;
     const score = Math.min(
       1,
-      0.5 * matchupScore + 0.3 * meta + 0.2 * fit + payoffBonus(details),
+      0.5 * matchupScore + 0.3 * meta + 0.2 * fit + payoffBonus(details) + inPool + patchBonus + metaBonus,
     );
 
     const reasons: string[] = [];
+    if (buff) reasons.push(`buffed in ${catalog.patch.version}`);
+    else if (metaRecommended) reasons.push(`highly recommended ${catalog.patch.version} ${roleLabel(role)}`);
+    if (poolSet.has(hero.id)) reasons.push("in your pool");
     if (role !== "any") {
       reasons.push(`${roleLabel(role)} for ${input.rank.replace("_", " ")}`);
     }
@@ -208,7 +268,9 @@ export function suggestDraft(
     if (weak.length && strong.length === 0 && !reasons.some((r) => r.includes("caution"))) {
       reasons.push(`caution vs ${weak.slice(0, 2).join(", ")}`);
     }
-    if (meta >= 0.52) reasons.push(`solid ${input.rank.replace("_", " ")} meta`);
+    if (meta >= 0.52 && !metaRecommended && !buff) {
+      reasons.push(`solid ${input.rank.replace("_", " ")} meta`);
+    }
     if (role === "any") {
       const missingRole = ROLE_SLOTS.find((slot) => {
         if (!hero.roles.includes(slot)) return false;
@@ -227,94 +289,15 @@ export function suggestDraft(
       score,
       matchupWinrate,
       metaWinrate: meta,
-      reasons: [...new Set(reasons)].slice(0, 4),
+      reasons: [...new Set(reasons)].slice(0, 5),
       details,
+      patch: buff ? { version: catalog.patch.version, note: buff.note } : null,
+      metaRecommended,
     });
   }
 
-  results.sort((a, b) => b.score - a.score);
-  return results.slice(0, input.limit ?? 12);
+  const limit = input.limit ?? (poolOnly ? Math.max(14, results.length) : 14);
+  return mixSuggestions(results, limit, enemy.length > 0);
 }
 
-const PHASES: { key: keyof import("./types.ts").ItemPopularity; phase: ItemPhase }[] = [
-  { key: "start_game_items", phase: "start" },
-  { key: "early_game_items", phase: "early" },
-  { key: "mid_game_items", phase: "mid" },
-  { key: "late_game_items", phase: "late" },
-];
-
-export function suggestItems(
-  catalog: Catalog,
-  input: {
-    heroId: number;
-    enemy: number[];
-    ownedItems?: string[];
-    phase?: ItemPhase | "all";
-  },
-): ItemSuggestion[] {
-  const pop = catalog.itemPopularity[String(input.heroId)];
-  if (!pop) return [];
-
-  const owned = new Set((input.ownedItems ?? []).map((k) => k.replace(/^item_/, "")));
-  const enemyTags = new Map<string, number>();
-  for (const id of input.enemy.filter((n) => n > 0)) {
-    const short = catalog.heroesById.get(id)?.shortName;
-    if (!short) continue;
-    for (const tag of tagsForShortName(short)) {
-      enemyTags.set(tag, (enemyTags.get(tag) ?? 0) + 1);
-    }
-  }
-
-  const out: ItemSuggestion[] = [];
-  const phases =
-    !input.phase || input.phase === "all"
-      ? PHASES
-      : PHASES.filter((p) => p.phase === input.phase);
-
-  for (const { key, phase } of phases) {
-    const bucket = pop[key] ?? {};
-    for (const [itemId, count] of Object.entries(bucket)) {
-      const item = catalog.itemsById.get(Number(itemId));
-      if (!item || owned.has(item.key)) continue;
-      if (item.key.startsWith("recipe_")) continue;
-      let score = Number(count) || 0;
-      const reasons = [`popular ${phase}`];
-
-      for (const rule of SITUATIONAL_ITEMS) {
-        const hits = rule.tags.reduce((sum, tag) => sum + (enemyTags.get(tag) ?? 0), 0);
-        if (hits <= 0) continue;
-        if (!rule.items.includes(item.key)) continue;
-        score *= 1.35 + Math.min(hits, 3) * 0.12;
-        reasons.push(rule.reason);
-      }
-
-      out.push({
-        itemKey: item.key,
-        phase,
-        score,
-        popularity: Number(count) || 0,
-        reasons: [...new Set(reasons)],
-      });
-    }
-  }
-
-  const seen = new Set<string>();
-  out.sort((a, b) => b.score - a.score);
-  const unique: ItemSuggestion[] = [];
-  for (const row of out) {
-    const id = `${row.phase}:${row.itemKey}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(row);
-  }
-
-  if (input.phase && input.phase !== "all") return unique.slice(0, 10);
-
-  const perPhase = new Map<ItemPhase, ItemSuggestion[]>();
-  for (const row of unique) {
-    const list = perPhase.get(row.phase) ?? [];
-    if (list.length < 8) list.push(row);
-    perPhase.set(row.phase, list);
-  }
-  return PHASES.flatMap((p) => perPhase.get(p.phase) ?? []);
-}
+export { suggestItems } from "./itemEngine.ts";

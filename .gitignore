@@ -1,9 +1,12 @@
 node_modules
 dist
+release
+electron/server.bundle.mjs
 data/*.json
 data/assets
 data/sync-log.txt
 !data/.gitkeep
+!data/patch.json
 .DS_Store
 *.local
 .env
