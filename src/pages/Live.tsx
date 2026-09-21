@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { MapClockPanel } from "../MapClock";
 import { PickPhaseBanner } from "../PickPhase";
 import { api } from "../api";
+import { loadBuildId, saveBuildId } from "../buildPrefs";
+import { BuildPicker } from "../BuildPicker";
 import { SafeImage } from "../SafeImage";
-import type { DraftState, Hero, Item, ItemSuggestion, LivePlayer, LiveState } from "../types";
+import { ensureToastPermission, setToastsEnabled, toastsEnabled } from "../toasts";
+import type { DraftState, Hero, Item, ItemSuggestResult, LivePlayer, LiveState } from "../types";
 
 type Props = {
   live: LiveState | null;
@@ -49,7 +52,9 @@ export function LivePage({
 }: Props) {
   const [installMsg, setInstallMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [nextBuys, setNextBuys] = useState<ItemSuggestion[]>([]);
+  const [plan, setPlan] = useState<ItemSuggestResult | null>(null);
+  const [buildId, setBuildId] = useState<string | undefined>(undefined);
+  const [alertsOn, setAlertsOn] = useState(toastsEnabled);
 
   const liveHero = live?.hero
     ? [...heroesById.values()].find((h) => h.shortName === live.hero?.shortName) ??
@@ -80,8 +85,12 @@ export function LivePage({
   }, [live?.players, live?.playerTeam, live?.draft, you?.team, draft]);
 
   useEffect(() => {
+    setBuildId(loadBuildId(liveHero?.id));
+  }, [liveHero?.id]);
+
+  useEffect(() => {
     if (!liveHero) {
-      setNextBuys([]);
+      setPlan(null);
       return;
     }
     const enemyIds = enemies.map((p) => p.heroId).filter((id): id is number => Boolean(id));
@@ -93,10 +102,11 @@ export function LivePage({
         ownedItems,
         phase: phaseFromClock(live?.clock ?? null),
         role: draft.role ?? "any",
+        buildId,
       })
-      .then(setNextBuys)
-      .catch(() => setNextBuys([]));
-  }, [liveHero?.id, you?.items, live?.items, live?.clock, enemies, liveHero, draft.role]);
+      .then(setPlan)
+      .catch(() => setPlan(null));
+  }, [liveHero?.id, you?.items, live?.items, live?.clock, enemies, liveHero, draft.role, buildId]);
 
   async function install() {
     setBusy(true);
@@ -113,6 +123,7 @@ export function LivePage({
 
   const drafting = Boolean(live?.pickPhase?.isDraft);
   const enemyHasItems = enemies.some((p) => p.items.length > 0);
+  const nextBuys = plan?.items ?? [];
 
   return (
     <div className="page live-page">
@@ -126,9 +137,24 @@ export function LivePage({
             {live?.paused ? " paused" : ""}
           </span>
         </div>
-        <button className="ghost" disabled={busy} onClick={() => void install()}>
-          {busy ? "Installing…" : "Install GSI"}
-        </button>
+        <div className="row">
+          <button className="ghost" disabled={busy} onClick={() => void install()}>
+            {busy ? "Installing…" : "Install GSI"}
+          </button>
+          <label className="pool-toggle">
+            <input
+              type="checkbox"
+              checked={alertsOn}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setAlertsOn(on);
+                setToastsEnabled(on);
+                if (on) void ensureToastPermission();
+              }}
+            />
+            Windows alerts (runes / next buy)
+          </label>
+        </div>
       </div>
       {installMsg && <div className="banner">{installMsg}</div>}
       <PickPhaseBanner live={live} compact />
@@ -181,6 +207,21 @@ export function LivePage({
               </p>
             )}
           </div>
+
+          {plan && liveHero && plan.builds.length > 0 && (
+            <div className="panel">
+              <h3>Playstyle</h3>
+              <BuildPicker
+                builds={plan.builds}
+                selectedId={plan.selectedBuildId}
+                itemsByKey={itemsByKey}
+                onPick={(id) => {
+                  saveBuildId(liveHero.id, id);
+                  setBuildId(id);
+                }}
+              />
+            </div>
+          )}
 
           {nextBuys.length > 0 && (
             <div className="panel">

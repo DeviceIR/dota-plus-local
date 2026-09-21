@@ -3,7 +3,7 @@ import type {
   DraftState,
   Hero,
   Item,
-  ItemSuggestion,
+  ItemSuggestResult,
   LiveState,
   PlayerRole,
   RankBracket,
@@ -47,8 +47,9 @@ export const api = {
     ownedItems?: string[];
     phase?: string;
     role?: PlayerRole;
+    buildId?: string;
   }) =>
-    request<ItemSuggestion[]>("/api/items/suggest", {
+    request<ItemSuggestResult>("/api/items/suggest", {
       method: "POST",
       body: JSON.stringify(body),
     }),

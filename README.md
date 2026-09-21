@@ -26,8 +26,8 @@ npm run pack:win
 
 Installers land in `release/`:
 
-- `DotaPlus Local-1.4.1-win-x64.exe` — setup (NSIS)
-- `DotaPlus Local-1.4.1-portable.exe` — no install, double-click
+- `DotaPlus Local-1.6.0-win-x64.exe` — setup (NSIS)
+- `DotaPlus Local-1.6.0-portable.exe` — no install, double-click
 
 Send one of those files. Friends do **not** need Node. Windows may SmartScreen-warn because the build is unsigned; that is expected.
 
@@ -50,6 +50,8 @@ GSI still only talks to `127.0.0.1` on that PC.
 3. Restart Dota 2
 
 The game POSTs JSON to `http://127.0.0.1:5174/gsi` (localhost only). Ranked drafts often omit enemy picks; use the Draft tab manually when that happens.
+
+Draft is a two-column board (heroes | suggestions) with Hot / laning / overall tabs. Item pages offer 2–3 playstyle builds from the laning stage (Shadow Fiend Magical vs Right-click, and the same idea on other heroes). Live can fire **Windows notifications** for runes/objectives and the next buy — never pick/ban, and never an in-game overlay. Put Dota in borderless windowed so Action Center toasts can show.
 
 ## Safety
 

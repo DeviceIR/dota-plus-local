@@ -133,6 +133,16 @@ export function metaWinrate(row: HeroStatsRow | undefined, rank: RankBracket): n
   return pick > 0 ? win / pick : 0.5;
 }
 
+function laningScoreFor(details: { laning: "weak" | "even" | "strong" }[]): number {
+  if (!details.length) return 0;
+  let total = 0;
+  for (const d of details) {
+    if (d.laning === "strong") total += 1;
+    else if (d.laning === "weak") total -= 1;
+  }
+  return total / details.length;
+}
+
 function mixSuggestions(
   rows: DraftSuggestion[],
   limit: number,
@@ -142,7 +152,8 @@ function mixSuggestions(
   const matchup = ranked.filter((r) => (r.matchupWinrate ?? 0) >= 0.52);
   const patch = ranked.filter((r) => r.patch);
   const meta = ranked.filter((r) => r.metaRecommended);
-  const groups = hasEnemies ? [matchup, patch, meta, ranked] : [patch, meta, ranked];
+  const laning = ranked.filter((r) => r.laningScore >= 0.2);
+  const groups = hasEnemies ? [matchup, laning, patch, meta, ranked] : [patch, meta, ranked];
   const seen = new Set<number>();
   const out: DraftSuggestion[] = [];
   let added = true;
@@ -243,6 +254,7 @@ export function suggestDraft(
     const fit = roleFit(catalog, hero.id, input.allied.filter((id) => id > 0));
     const matchupScore = matchupWinrate ?? 0.5;
     const details = matchupDetails(catalog, hero, enemy, kitCache);
+    const laningScore = laningScoreFor(details);
     const inPool = poolSet.has(hero.id) ? 0.04 : 0;
     const buff = patchBuffFor(catalog.patch, hero.shortName, role);
     const patchBonus = buff ? 0.08 : 0;
@@ -289,6 +301,7 @@ export function suggestDraft(
       score,
       matchupWinrate,
       metaWinrate: meta,
+      laningScore,
       reasons: [...new Set(reasons)].slice(0, 5),
       details,
       patch: buff ? { version: catalog.patch.version, note: buff.note } : null,
@@ -296,8 +309,8 @@ export function suggestDraft(
     });
   }
 
-  const limit = input.limit ?? (poolOnly ? Math.max(14, results.length) : 14);
+  const limit = input.limit ?? (poolOnly ? Math.max(36, Math.min(results.length, 48)) : 42);
   return mixSuggestions(results, limit, enemy.length > 0);
 }
 
-export { suggestItems } from "./itemEngine.ts";
+export { suggestItems, suggestItemPlan } from "./itemEngine.ts";

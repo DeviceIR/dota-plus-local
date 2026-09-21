@@ -1,6 +1,25 @@
 import type { Catalog } from "./catalog.ts";
+import {
+  allBuildKeys,
+  buildsForHero,
+  exclusiveKeys,
+  keysForBuild,
+  recommendBuildId,
+  resolveBuildId,
+  SHARED_BUILD_ITEMS,
+  type HeroBuild,
+} from "./heroBuilds.ts";
 import { SITUATIONAL_ITEMS, tagsForShortName } from "./tags.ts";
-import type { Hero, HeroTag, Item, ItemPhase, ItemSuggestion, PlayerRole } from "./types.ts";
+import type {
+  Hero,
+  HeroTag,
+  Item,
+  ItemBuildInfo,
+  ItemPhase,
+  ItemSuggestion,
+  ItemSuggestResult,
+  PlayerRole,
+} from "./types.ts";
 
 type PopKey = keyof import("./types.ts").ItemPopularity;
 
@@ -973,10 +992,39 @@ export function suggestItems(
     ownedItems?: string[];
     phase?: ItemPhase | "all";
     role?: PlayerRole;
+    buildId?: string;
   },
 ): ItemSuggestion[] {
+  return suggestItemPlan(catalog, input).items;
+}
+
+function toBuildInfo(builds: HeroBuild[], recommendedId: string): ItemBuildInfo[] {
+  return builds.map((b) => ({
+    id: b.id,
+    name: b.name,
+    summary: b.summary,
+    recommended: b.id === recommendedId,
+    start: b.start,
+    early: b.early,
+    mid: b.mid,
+    late: b.late,
+  }));
+}
+
+export function suggestItemPlan(
+  catalog: Catalog,
+  input: {
+    heroId: number;
+    enemy: number[];
+    ownedItems?: string[];
+    phase?: ItemPhase | "all";
+    role?: PlayerRole;
+    buildId?: string;
+  },
+): ItemSuggestResult {
+  const empty: ItemSuggestResult = { builds: [], selectedBuildId: "", items: [] };
   const hero = catalog.heroesById.get(input.heroId);
-  if (!hero) return [];
+  if (!hero) return empty;
 
   const graph = graphFor(catalog);
   const role = inferRole(hero, input.role);
@@ -999,6 +1047,24 @@ export function suggestItems(
   const roleCore = new Set(ROLE_CORE[role] ?? []);
   const anti = new Set(ANTI_ROLE[role] ?? []);
   const hasEnemies = enemies.length > 0;
+  const builds = buildsForHero(hero, role);
+  const recommendedId = recommendBuildId(
+    builds,
+    enemies.map((e) => e.tags),
+    owned,
+  );
+  const selectedBuildId = resolveBuildId(
+    builds,
+    input.buildId,
+    enemies.map((e) => e.tags),
+    owned,
+  );
+  const selectedBuild = builds.find((b) => b.id === selectedBuildId) ?? builds[0];
+  if (!selectedBuild) {
+    return { builds: [], selectedBuildId: "", items: [] };
+  }
+  const selectedKeys = new Set(allBuildKeys(selectedBuild));
+  const otherPath = exclusiveKeys(builds, selectedBuild.id);
 
   const inventoryValue = [...owned].reduce((sum, key) => {
     const item = catalog.itemsByKey.get(key);
@@ -1024,12 +1090,14 @@ export function suggestItems(
   for (const o of owned) {
     for (const parent of graph.parents.get(o) ?? []) extraKeys.add(parent);
   }
+  for (const k of selectedKeys) extraKeys.add(k);
 
   const out: ItemSuggestion[] = [];
 
   for (const { key: popKey, phase } of phases) {
     const bucket = pop[popKey] ?? {};
     const maxPop = maxInBucket(bucket);
+    const phaseKeys = new Set(keysForBuild(selectedBuild, phase));
     const candidateIds = new Set<string>([
       ...Object.keys(bucket),
       ...[...extraKeys].map((k) => String(catalog.itemsByKey.get(k)?.id ?? "")).filter(Boolean),
@@ -1097,27 +1165,49 @@ export function suggestItems(
         coverage *= 0.35;
       }
 
-      const wMeta = hasEnemies ? 0.32 : 0.44;
-      const wCounter = hasEnemies ? 0.24 : 0;
-      const wRole = 0.22;
-      const wProg = 0.12;
-      const wCov = hasEnemies ? 0.1 : 0.04;
+      let buildScore = 0.28;
+      if (phaseKeys.has(item.key)) buildScore = 1;
+      else if (selectedKeys.has(item.key)) buildScore = 0.78;
+      else if (SHARED_BUILD_ITEMS.has(item.key)) buildScore = 0.58;
+      else if (otherPath.has(item.key) && !targeted && !hole) buildScore = 0.08;
+
+      const wMeta = hasEnemies ? 0.24 : 0.34;
+      const wCounter = hasEnemies ? 0.18 : 0;
+      const wRole = 0.16;
+      const wProg = 0.1;
+      const wCov = hasEnemies ? 0.08 : 0.04;
+      const wBuild = 0.28;
 
       let score =
         wMeta * meta +
         wCounter * counter +
         wRole * roleScore +
         wProg * prog.score +
-        wCov * coverage;
+        wCov * coverage +
+        wBuild * buildScore;
 
       score *= phaseCostMult(phase, item.cost, item.key);
-      if (meta < 0.05 && counter < 0.15 && prog.score < 0.4 && coverage < 0.4 && !roleCore.has(item.key)) {
+      if (otherPath.has(item.key) && !targeted && !hole && !SHARED_BUILD_ITEMS.has(item.key)) {
+        score *= 0.35;
+      }
+      if (
+        meta < 0.05 &&
+        counter < 0.15 &&
+        prog.score < 0.4 &&
+        coverage < 0.4 &&
+        !roleCore.has(item.key) &&
+        !selectedKeys.has(item.key) &&
+        !SHARED_BUILD_ITEMS.has(item.key)
+      ) {
         score *= 0.3;
       }
       if (score < 0.06) continue;
 
       const reasons: string[] = [];
       const benefits: string[] = [];
+      if (phaseKeys.has(item.key) || selectedKeys.has(item.key)) {
+        uniquePush(reasons, `${selectedBuild.name} build`);
+      }
       if (meta >= 0.2) uniquePush(reasons, `usual ${phase} buy on ${hero.localizedName}`);
       if (counter >= 0.18) uniquePush(reasons, "into this lineup");
       if (roleCore.has(item.key)) uniquePush(reasons, `${roleLabel(role)} core`);
@@ -1127,6 +1217,9 @@ export function suggestItems(
       for (const b of sit.benefits) uniquePush(benefits, b);
       if (prog.benefit) uniquePush(benefits, prog.benefit);
       if (hole) uniquePush(benefits, hole.benefit);
+      if (benefits.length === 0 && (phaseKeys.has(item.key) || selectedKeys.has(item.key))) {
+        uniquePush(benefits, `${selectedBuild.name}: ${selectedBuild.summary}`);
+      }
       if (benefits.length === 0 && meta >= 0.25) {
         uniquePush(benefits, `High pick-rate ${phase} item on ${hero.localizedName}`);
       }
@@ -1151,5 +1244,9 @@ export function suggestItems(
     out.push(...collapsed.slice(0, cap));
   }
 
-  return out;
+  return {
+    builds: toBuildInfo(builds, recommendedId),
+    selectedBuildId: selectedBuild.id,
+    items: out,
+  };
 }

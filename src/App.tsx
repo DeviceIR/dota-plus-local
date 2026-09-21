@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, emptyDraft } from "./api";
+import { loadBuildId } from "./buildPrefs";
 import { buildClockCards, formatGameClock, interpolateClock, soonestCue } from "./gameClock";
 import { isHeroSelect, mergeLiveDraft, resetTeams } from "./gsiDraft";
 import { loadPool, savePool, type HeroPool } from "./heroPool";
@@ -8,6 +9,13 @@ import { DraftPage } from "./pages/Draft";
 import { ItemsPage } from "./pages/Items";
 import { LibraryPage } from "./pages/Library";
 import { LivePage } from "./pages/Live";
+import {
+  ensureToastPermission,
+  resetGameToasts,
+  tickItemToast,
+  tickRuneToasts,
+  toastsEnabled,
+} from "./toasts";
 import type { DraftState, Hero, Item, LiveState, StatusPayload } from "./types";
 
 const DRAFT_KEY = "dota-plus-draft";
@@ -33,7 +41,13 @@ export function App() {
   const [pool, setPool] = useState<HeroPool>(loadPool);
   const [live, setLive] = useState<LiveState | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [userPinnedTab, setUserPinnedTab] = useState(false);
   const matchRef = useRef<string | null>(null);
+
+  function selectTab(id: Tab) {
+    setTab(id);
+    setUserPinnedTab(id === "items" || id === "pool" || id === "library");
+  }
 
   const heroesById = useMemo(() => new Map(heroes.map((h) => [h.id, h])), [heroes]);
   const itemsByKey = useMemo(() => new Map(items.map((i) => [i.key, i])), [items]);
@@ -92,6 +106,10 @@ export function App() {
   useEffect(() => {
     if (!live?.connected) return;
     const matchChanged = Boolean(live.matchId && matchRef.current && live.matchId !== matchRef.current);
+    if (matchChanged) {
+      resetGameToasts();
+      setUserPinnedTab(false);
+    }
     if (live.matchId) matchRef.current = live.matchId;
     setDraft((d) => mergeLiveDraft(matchChanged ? resetTeams(d) : d, live));
   }, [live]);
@@ -101,22 +119,93 @@ export function App() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!live?.connected) return;
+    const drafting = isHeroSelect(live);
+    const inGame = !drafting && /PRE_GAME|GAME_IN_PROGRESS/.test(live.gameState ?? "");
+    const want: Tab | null = drafting ? "draft" : inGame ? "live" : null;
+    if (!want || userPinnedTab) return;
+    setTab((current) => {
+      if (current !== "draft" && current !== "live") return current;
+      return current === want ? current : want;
+    });
+  }, [live?.connected, live?.gameState, live?.pickPhase?.isDraft, live?.matchId, userPinnedTab]);
+
   const liveClock = interpolateClock(
     live?.clock ?? null,
     live?.lastUpdate ?? null,
     Boolean(live?.paused),
     now,
   );
+  const clockCards = live?.connected
+    ? buildClockCards({
+        clock: liveClock,
+        daytime: live?.daytime ?? null,
+        roshDeath: null,
+        tormentorDeath: null,
+      })
+    : [];
   const nextCue = live?.connected
-    ? soonestCue(
-        buildClockCards({
-          clock: liveClock,
-          daytime: live?.daytime ?? null,
-          roshDeath: null,
-          tormentorDeath: null,
-        }).filter((c) => c.id !== "stack" && c.id !== "siege"),
-      )
+    ? soonestCue(clockCards.filter((c) => c.id !== "stack" && c.id !== "siege"))
     : null;
+
+  useEffect(() => {
+    if (!live?.connected || !toastsEnabled()) return;
+    void ensureToastPermission();
+  }, [live?.connected]);
+
+  useEffect(() => {
+    if (!live?.connected || live.paused) return;
+    tickRuneToasts(clockCards, Boolean(live.pickPhase?.isDraft || isHeroSelect(live)));
+  }, [liveClock, live?.connected, live?.paused, live?.daytime, live?.pickPhase?.isDraft]);
+
+  useEffect(() => {
+    if (!live?.connected || isHeroSelect(live) || live.pickPhase?.isDraft) return;
+    if (live.clock == null || live.clock < -20) return;
+    const hero =
+      heroes.find((h) => h.shortName === live.hero?.shortName) ??
+      (live.hero?.id ? heroesById.get(live.hero.id) : undefined);
+    if (!hero) return;
+    const team = live.playerTeam ?? draft.side;
+    const enemy = (team === "radiant" ? draft.dire : draft.radiant).filter(
+      (id): id is number => Boolean(id),
+    );
+    const you = live.players.find((p) => p.isYou);
+    const ownedItems = [...new Set([...(you?.items ?? []), ...(live.items ?? [])])];
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void api
+        .itemSuggest({
+          heroId: hero.id,
+          enemy,
+          ownedItems,
+          phase: live.clock != null && live.clock < 0 ? "start" : live.clock != null && live.clock < 600 ? "early" : live.clock != null && live.clock < 1500 ? "mid" : "late",
+          role: draft.role ?? "any",
+          buildId: loadBuildId(hero.id),
+        })
+        .then((plan) => {
+          if (cancelled) return;
+          const top = plan.items[0];
+          const item = top?.item ?? (top ? itemsByKey.get(top.itemKey) : undefined);
+          tickItemToast(item?.dname ?? null, top?.itemKey ?? null, false, true);
+        })
+        .catch(() => undefined);
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    live?.connected,
+    live?.clock,
+    live?.items,
+    live?.hero?.shortName,
+    live?.pickPhase?.isDraft,
+    draft.role,
+    draft.dire,
+    draft.radiant,
+    heroes.length,
+  ]);
 
   return (
     <div className="app">
@@ -127,7 +216,7 @@ export function App() {
         </div>
         <nav className="nav">
           {(["draft", "pool", "items", "library", "live"] as Tab[]).map((id) => (
-            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            <button key={id} className={tab === id ? "active" : ""} onClick={() => selectTab(id)}>
               {id === "pool" && pool.ids.length ? `pool (${pool.ids.length})` : id}
             </button>
           ))}

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { loadBuildId, saveBuildId } from "../buildPrefs";
+import { BuildPicker } from "../BuildPicker";
 import { SafeImage } from "../SafeImage";
-import type { DraftState, Hero, Item, ItemSuggestion, LiveState, PlayerRole } from "../types";
+import type { DraftState, Hero, Item, ItemSuggestion, ItemSuggestResult, LiveState, PlayerRole } from "../types";
 
 type Props = {
   heroes: Hero[];
@@ -38,7 +40,8 @@ export function ItemsPage({ heroes, heroesById, itemsByKey, draft, setDraft, liv
   const [heroId, setHeroId] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [phase, setPhase] = useState<(typeof PHASES)[number]>("all");
-  const [rows, setRows] = useState<ItemSuggestion[]>([]);
+  const [plan, setPlan] = useState<ItemSuggestResult | null>(null);
+  const [buildId, setBuildId] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,6 +52,10 @@ export function ItemsPage({ heroes, heroesById, itemsByKey, draft, setDraft, liv
   useEffect(() => {
     if (liveHero) setHeroId(liveHero.id);
   }, [liveHero?.id]);
+
+  useEffect(() => {
+    setBuildId(loadBuildId(heroId));
+  }, [heroId]);
 
   const filteredHeroes = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -71,13 +78,16 @@ export function ItemsPage({ heroes, heroesById, itemsByKey, draft, setDraft, liv
           ownedItems: owned,
           phase,
           role: draft.role ?? "any",
+          buildId,
         })
-        .then(setRows)
-        .catch(() => setRows([]))
+        .then(setPlan)
+        .catch(() => setPlan(null))
         .finally(() => setBusy(false));
     }, 150);
     return () => clearTimeout(t);
-  }, [heroId, enemy.join(","), phase, owned.join(","), draft.role]);
+  }, [heroId, enemy.join(","), phase, owned.join(","), draft.role, buildId]);
+
+  const rows = plan?.items ?? [];
 
   const grouped = useMemo(() => {
     const map = new Map<string, ItemSuggestion[]>();
@@ -155,6 +165,26 @@ export function ItemsPage({ heroes, heroesById, itemsByKey, draft, setDraft, liv
           ))}
         </div>
       </div>
+
+      {heroId && plan && plan.builds.length > 0 && (
+        <div className="panel">
+          <h3>Playstyle from lane</h3>
+          <p className="muted">
+            Full playstyle paths from the first items — Magical vs Right-click on Shadow Fiend,
+            farming vs fighting on carries, blink vs aura on offlaners. Pick one and the list
+            follows that path.
+          </p>
+          <BuildPicker
+            builds={plan.builds}
+            selectedId={plan.selectedBuildId}
+            itemsByKey={itemsByKey}
+            onPick={(id) => {
+              saveBuildId(heroId, id);
+              setBuildId(id);
+            }}
+          />
+        </div>
+      )}
 
       <div className="row tabs">
         {PHASES.map((p) => (

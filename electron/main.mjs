@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, shell } from "electron";
 
+app.setAppUserModelId("local.dotaplus");
+
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 5174;
 const ORIGIN = `http://127.0.0.1:${PORT}`;

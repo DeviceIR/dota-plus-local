@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import { ASSETS_DIR, DIST_DIR, GSI_TOKEN, PORT } from "./paths.ts";
 import { loadCatalog, requireCatalog } from "./catalog.ts";
-import { suggestDraft, suggestItems } from "./suggest.ts";
+import { suggestDraft, suggestItemPlan } from "./suggest.ts";
 import { getLiveState, ingestGsi, type GsiPayload } from "./gsi.ts";
 import { gsiConfigPreview, installGsiConfig } from "./steam.ts";
 import type { ItemPhase, PlayerRole, RankBracket } from "./types.ts";
@@ -101,12 +101,15 @@ app.post(
     const ownedItems = (req.body?.ownedItems ?? []) as string[];
     const phase = (req.body?.phase ?? "all") as ItemPhase | "all";
     const role = (req.body?.role ?? "any") as PlayerRole;
-    const suggestions = suggestItems(catalog, { heroId, enemy, ownedItems, phase, role });
-    const withItems = suggestions.map((row) => ({
-      ...row,
-      item: catalog.itemsByKey.get(row.itemKey) ?? null,
-    }));
-    res.json(withItems);
+    const buildId = typeof req.body?.buildId === "string" ? req.body.buildId : undefined;
+    const plan = suggestItemPlan(catalog, { heroId, enemy, ownedItems, phase, role, buildId });
+    res.json({
+      ...plan,
+      items: plan.items.map((row) => ({
+        ...row,
+        item: catalog.itemsByKey.get(row.itemKey) ?? null,
+      })),
+    });
   }),
 );
 

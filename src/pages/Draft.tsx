@@ -56,6 +56,8 @@ export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, 
   const [attr, setAttr] = useState("all");
   const [suggestions, setSuggestions] = useState<DraftSuggestion[]>([]);
   const [busy, setBusy] = useState(false);
+  const [bucketId, setBucketId] = useState<"hot" | "laning" | "overall">("hot");
+  const [whyId, setWhyId] = useState<number | null>(null);
 
   const taken = useMemo(() => {
     const ids = new Set<number>();
@@ -128,9 +130,13 @@ export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, 
   }
 
   const allied = draft.side === "radiant" ? draft.radiant : draft.dire;
+  const buckets = useMemo(() => splitSuggestions(suggestions), [suggestions]);
+  const activeBucket = buckets.find((b) => b.id === bucketId) ?? buckets[0];
+  const why = suggestions.find((s) => s.heroId === whyId) ?? null;
+  const whyHero = why ? heroesById.get(why.heroId) : null;
 
   return (
-    <div className="page">
+    <div className="page draft-page">
       <PickPhaseBanner live={live ?? null} />
       <div className="row">
         <button
@@ -240,7 +246,7 @@ export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, 
       )}
 
       <div className="layout">
-        <div className="panel">
+        <div className="panel layout-pane">
           <div className="row">
             <input
               className="search"
@@ -260,7 +266,7 @@ export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, 
               ))}
             </div>
           </div>
-          <div className="grid" style={{ marginTop: 12 }}>
+          <div className="grid pane-scroll">
             {filtered.map((hero) => {
               const used = taken.has(hero.id);
               const pinned = pool.ids.includes(hero.id);
@@ -279,78 +285,201 @@ export function DraftPage({ heroes, heroesById, draft, setDraft, pool, setPool, 
           </div>
         </div>
 
-        <aside className="panel">
+        <aside className="panel suggest-panel layout-pane">
           <h3>{busy ? "Reading matchups…" : "Suggested picks"}</h3>
-          <p className="muted">
+          <p className="muted suggest-col-copy">
             {pool.suggestFromPool && pool.ids.length === 0
               ? "Your pool is empty. Open the Pool tab and click the heroes you play."
               : pool.suggestFromPool && pool.ids.length > 0
-                ? `Ranking ${pool.ids.length} pool heroes${draft.role && draft.role !== "any" ? ` as ${ROLES.find((r) => r.id === draft.role)?.label}` : ""} vs this lineup. ${patchVersion ?? "Patch"} buffs you play stay next to matchup counters.`
-                : `Comparing ${draft.role && draft.role !== "any" ? `${ROLES.find((r) => r.id === draft.role)?.label.toLowerCase()} ` : ""}matchup counters with ${patchVersion ?? "this patch"} buffs and hot meta. Both can show.`}
+                ? `Ranking ${pool.ids.length} pool heroes${draft.role && draft.role !== "any" ? ` as ${ROLES.find((r) => r.id === draft.role)?.label}` : ""} vs this lineup.`
+                : `Click a name to see why vs this lineup. ${patchVersion ?? "This patch"} buffs stay in Hot. Grid stays one-click.`}
           </p>
-          {suggestions.map((s) => {
-            const hero = heroesById.get(s.heroId);
-            if (!hero) return null;
-            const goodMatchup = (s.matchupWinrate ?? 0) >= 0.52;
-            return (
-              <button key={s.heroId} className="suggest-card" onClick={() => placeHero(s.heroId)}>
-                <div className="suggest-head">
-                  <SafeImage src={hero.img} alt={hero.localizedName} />
-                  <div>
-                    <strong className="name">{hero.localizedName}</strong>
-                    <div className="suggest-pills">
-                      {s.patch && <span className="pill patch">{s.patch.version} buff</span>}
-                      {goodMatchup && <span className="pill matchup">good vs lineup</span>}
-                      {s.metaRecommended && !s.patch && (
-                        <span className="pill meta">hot this patch</span>
-                      )}
-                    </div>
-                    <div className="meta">
-                      {s.matchupWinrate != null && (
-                        <span className="pct">vs lineup {pct(s.matchupWinrate)} · </span>
-                      )}
-                      meta {pct(s.metaWinrate)}
-                      <div className="reason">{s.reasons.slice(0, 2).join(" · ")}</div>
-                    </div>
-                  </div>
-                </div>
-                {s.patch && <p className="note-line patch-note">{s.patch.note}</p>}
-                {(s.details ?? []).map((d) => (
-                  <div key={d.enemyId} className="matchup-note">
-                    <div className="matchup-note-title">
-                      vs {d.enemyName}
-                      {d.winrate != null && <span className="pct"> {pct(d.winrate)}</span>}
-                      <span className={`laning-tag ${d.laning}`}>{d.laning} lane</span>
-                    </div>
-                    <p className={`note-line ${d.laning}`}>{d.laningNote}</p>
-                    {d.benefits.map((line) => (
-                      <p key={line} className="note-line benefit">
-                        {line}
-                      </p>
-                    ))}
-                    {d.items.map((line) => (
-                      <p key={line} className="note-line item-note">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                ))}
+          <div className="row filters suggest-tabs">
+            {buckets.map((col) => (
+              <button
+                key={col.id}
+                className={bucketId === col.id ? "active ghost" : "ghost"}
+                onClick={() => setBucketId(col.id)}
+              >
+                {col.title}
+                <span className="muted"> {col.rows.length}</span>
               </button>
-            );
-          })}
-          {!busy && suggestions.length === 0 && (
-            <p className="muted">
-              {pool.suggestFromPool && pool.ids.length > 0
-                ? "No pool heroes left for this role or lineup. Add more in Pool, switch role to Any, or uncheck Suggest from my pool."
-                : "Fill enemy slots or pick a role to rank suggestions."}
-            </p>
+            ))}
+          </div>
+          <p className="muted suggest-col-copy">{activeBucket.blurb}</p>
+
+          {why && whyHero && (
+            <div className="why-strip">
+              <div className="why-strip-head">
+                <SafeImage src={whyHero.img} alt={whyHero.localizedName} />
+                <div>
+                  <strong>{whyHero.localizedName}</strong>
+                  <div className="muted">{why.reasons.slice(0, 2).join(" · ")}</div>
+                </div>
+                <button
+                  className="gold"
+                  onClick={() => placeHero(why.heroId)}
+                  disabled={mode === "pick" && taken.has(why.heroId)}
+                >
+                  {mode === "ban" ? "Ban" : "Pick"}
+                </button>
+              </div>
+              {why.patch && <p className="note-line patch-note">{why.patch.note}</p>}
+              {(why.details ?? []).slice(0, 4).map((d) => (
+                <div key={d.enemyId} className="matchup-note">
+                  <div className="matchup-note-title">
+                    vs {d.enemyName}
+                    {d.winrate != null && <span className="pct"> {pct(d.winrate)}</span>}
+                    <span className={`laning-tag ${d.laning}`}>{d.laning} lane</span>
+                  </div>
+                  <p className={`note-line ${d.laning}`}>{d.laningNote}</p>
+                  {d.benefits.slice(0, 2).map((line) => (
+                    <p key={line} className="note-line benefit">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ))}
+              {(why.details ?? []).length === 0 && (
+                <p className="muted">Fill enemy slots to see lane notes vs this pick.</p>
+              )}
+            </div>
           )}
-          {allied.filter(Boolean).length >= 5 && (
-            <p className="muted">Your side is full. Clear a slot to keep drafting.</p>
-          )}
+
+          <div className="suggest-list pane-scroll">
+            {activeBucket.rows.map((s) => {
+              const hero = heroesById.get(s.heroId);
+              if (!hero) return null;
+              return (
+                <SuggestMini
+                  key={`${activeBucket.id}-${s.heroId}`}
+                  suggestion={s}
+                  hero={hero}
+                  selected={whyId === s.heroId}
+                  onSelect={() => setWhyId(s.heroId)}
+                  onPick={() => placeHero(s.heroId)}
+                />
+              );
+            })}
+            {activeBucket.rows.length === 0 && !busy && (
+              <p className="muted">Nothing in this bucket yet. Fill enemy slots or pick a role.</p>
+            )}
+            {!busy && suggestions.length === 0 && (
+              <p className="muted">
+                {pool.suggestFromPool && pool.ids.length > 0
+                  ? "No pool heroes left for this role or lineup. Add more in Pool, switch role to Any, or uncheck Suggest from my pool."
+                  : "Fill enemy slots or pick a role to rank suggestions."}
+              </p>
+            )}
+            {allied.filter(Boolean).length >= 5 && (
+              <p className="muted">Your side is full. Clear a slot to keep drafting.</p>
+            )}
+          </div>
         </aside>
       </div>
     </div>
+  );
+}
+
+function takeUnique(rows: DraftSuggestion[], limit: number): DraftSuggestion[] {
+  const seen = new Set<number>();
+  const out: DraftSuggestion[] = [];
+  for (const row of rows) {
+    if (seen.has(row.heroId)) continue;
+    seen.add(row.heroId);
+    out.push(row);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function splitSuggestions(rows: DraftSuggestion[]): {
+  id: "hot" | "laning" | "overall";
+  title: string;
+  blurb: string;
+  rows: DraftSuggestion[];
+}[] {
+  const hot = takeUnique(
+    [...rows].sort((a, b) => {
+      const ap = a.patch ? 1 : 0;
+      const bp = b.patch ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      const am = a.metaRecommended ? 1 : 0;
+      const bm = b.metaRecommended ? 1 : 0;
+      if (am !== bm) return bm - am;
+      return b.metaWinrate - a.metaWinrate || b.score - a.score;
+    }).filter((r) => r.patch || r.metaRecommended || r.metaWinrate >= 0.52),
+    12,
+  );
+  const laning = takeUnique(
+    [...rows]
+      .filter((r) => r.laningScore >= 0.15 || (r.matchupWinrate ?? 0) >= 0.52)
+      .sort((a, b) => b.laningScore - a.laningScore || (b.matchupWinrate ?? 0) - (a.matchupWinrate ?? 0)),
+    12,
+  );
+  const overall = takeUnique(
+    [...rows].sort((a, b) => b.score - a.score),
+    12,
+  );
+  return [
+    {
+      id: "hot",
+      title: "Hot this patch",
+      blurb: "Buffed and high-pick meta for this rank.",
+      rows: hot.length ? hot : overall.slice(0, 8),
+    },
+    {
+      id: "laning",
+      title: "Good laning",
+      blurb: "Lane notes vs the heroes already picked.",
+      rows: laning.length ? laning : overall.slice(0, 8),
+    },
+    {
+      id: "overall",
+      title: "Good overall",
+      blurb: "Matchup + meta + role fit together.",
+      rows: overall,
+    },
+  ];
+}
+
+function SuggestMini({
+  suggestion,
+  hero,
+  selected,
+  onSelect,
+  onPick,
+}: {
+  suggestion: DraftSuggestion;
+  hero: Hero;
+  selected: boolean;
+  onSelect: () => void;
+  onPick: () => void;
+}) {
+  const goodMatchup = (suggestion.matchupWinrate ?? 0) >= 0.52;
+  return (
+    <button
+      className={`suggest-mini ${selected ? "selected" : ""}`}
+      onClick={onSelect}
+      onDoubleClick={onPick}
+    >
+      <SafeImage src={hero.img} alt={hero.localizedName} />
+      <div>
+        <strong className="name">{hero.localizedName}</strong>
+        <div className="suggest-pills">
+          {suggestion.patch && <span className="pill patch">{suggestion.patch.version} buff</span>}
+          {goodMatchup && <span className="pill matchup">good vs lineup</span>}
+          {suggestion.metaRecommended && !suggestion.patch && <span className="pill meta">hot</span>}
+          {suggestion.laningScore >= 0.2 && <span className="pill matchup">lane</span>}
+        </div>
+        <div className="meta">
+          {suggestion.matchupWinrate != null && (
+            <span className="pct">vs {pct(suggestion.matchupWinrate)} · </span>
+          )}
+          meta {pct(suggestion.metaWinrate)}
+        </div>
+      </div>
+    </button>
   );
 }
 

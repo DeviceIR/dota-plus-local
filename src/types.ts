@@ -67,6 +67,7 @@ export type DraftSuggestion = {
   score: number;
   matchupWinrate: number | null;
   metaWinrate: number;
+  laningScore: number;
   reasons: string[];
   details: MatchupDetail[];
   patch: { version: string; note: string } | null;
@@ -81,6 +82,23 @@ export type ItemSuggestion = {
   reasons: string[];
   benefits: string[];
   item: Item | null;
+};
+
+export type ItemBuildInfo = {
+  id: string;
+  name: string;
+  summary: string;
+  recommended: boolean;
+  start: string[];
+  early: string[];
+  mid: string[];
+  late: string[];
+};
+
+export type ItemSuggestResult = {
+  builds: ItemBuildInfo[];
+  selectedBuildId: string;
+  items: ItemSuggestion[];
 };
 
 export type PickPhase = {
